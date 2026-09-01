@@ -1,8 +1,8 @@
 {
   "mandate_id": "mandate_demo_001",
   "principal": "demo.user@okaxis",
-  "issued_at": "2026-09-01T00:00:00.000Z",
-  "expires_at": "2026-12-31T23:59:59.000Z",
+  "issued_at": "2026-09-01T00:00:00+05:30",
+  "expires_at": "2026-12-31T23:59:59+05:30",
   "scope": {
     "per_transaction_cap_inr": 2000,
     "monthly_cap_inr": 10000,
