@@ -1,5 +1,11 @@
 node_modules/
+
+# every audit database, whatever it is called
 data/
+data-*/
+*.db
+*.db-shm
+*.db-wal
 .env
 *.local
 

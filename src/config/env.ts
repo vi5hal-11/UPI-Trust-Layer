@@ -17,7 +17,7 @@ export const env = {
   razorpayKeyId: str('RAZORPAY_KEY_ID'),
   razorpayKeySecret: str('RAZORPAY_KEY_SECRET'),
   anthropicApiKey: str('ANTHROPIC_API_KEY'),
-  agentModel: str('AGENT_MODEL', 'claude-sonnet-4-5'),
+  agentModel: str('AGENT_MODEL', 'claude-opus-5'),
   port: Number.parseInt(str('PORT', '3000'), 10) || 3000,
   auditDbPath: str('AUDIT_DB_PATH', 'data/audit.db'),
   policyPath: str('POLICY_PATH', 'src/config/policy.default.json'),
