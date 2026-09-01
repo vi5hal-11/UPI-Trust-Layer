@@ -333,6 +333,18 @@ export class Gatekeeper {
       };
     }
 
+    // The policy result that got us here describes the REQUEST. For an approved
+    // step-up that text is "waiting for your approval... nothing has been paid
+    // yet", which would be a flat lie on an event where money just moved. The
+    // log has to describe what happened, not what was asked for.
+    const reason =
+      onSuccess === 'step_up_approved'
+        ? `Approved by you, re-checked against the mandate, and paid: ` +
+          `${formatInr(intent.amount_inr)} for '${intent.item}'. That leaves ` +
+          `${formatInr(result.budget.monthly_remaining_after_inr)} of the ` +
+          `${formatInr(result.budget.monthly_cap_inr)} monthly budget.`
+        : result.reason;
+
     const event = this.store.append({
       mandate_id: this.mandate.mandate_id,
       decision: onSuccess,
@@ -340,7 +352,7 @@ export class Gatekeeper {
       amount_inr: intent.amount_inr,
       category: intent.category,
       merchant: intent.merchant ?? null,
-      reason: result.reason,
+      reason,
       violations: [],
       budget: result.budget,
       razorpay_order_id: action.order_id,
@@ -354,7 +366,7 @@ export class Gatekeeper {
       paid: true,
       order_id: action.order_id,
       agent_message:
-        `Paid. ${result.reason} Razorpay order ${action.order_id}` +
+        `Paid. ${reason} Razorpay order ${action.order_id}` +
         `${action.mock ? ' (mock mode - no keys configured)' : ''}.`,
     };
   }

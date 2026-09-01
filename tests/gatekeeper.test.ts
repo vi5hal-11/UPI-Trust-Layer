@@ -202,6 +202,22 @@ describe('resolveStepUp', () => {
     expect(store.monthSpendInr('mandate_test_001', new Date())).toBe(1800);
   });
 
+  // The audit trail is the product. An event that says "nothing has been paid
+  // yet" attached to a completed payment is the exact failure this whole
+  // project exists to prevent, so it is asserted rather than eyeballed.
+  it('does not log an approved payment with the text of the parked request', async () => {
+    const { rail } = spyRail();
+    const gate = gatekeeper(rail);
+    const parked = await gate.attemptPurchase(buy(1800, 'subscriptions', 'annual subscription'));
+
+    const outcome = await gate.resolveStepUp(parked.event.event_id, true);
+
+    expect(outcome.event.reason).not.toMatch(/nothing has been paid/i);
+    expect(outcome.event.reason).not.toMatch(/waiting for your approval/i);
+    expect(outcome.event.reason).toMatch(/approved/i);
+    expect(outcome.agent_message).not.toMatch(/nothing has been paid/i);
+  });
+
   // CLAUDE.md invariant 2 - the month moves while a request sits parked.
   it('re-runs the policy at approval time and blocks if the cap is now gone', async () => {
     const { rail, calls } = spyRail();

@@ -45,3 +45,49 @@ the ₹15,000 electronics demo still returns its three reasons.
 - a mandate that is both expired and edited reports both;
 - an expired mandate blocks a purchase that breaks three other rules, and
   reports only the expiry — proving the spending rules never ran.
+
+## [Sept 1, 15:22] The audit trail reported a completed payment as "nothing has been paid yet"
+
+**What broke.** Running the four demo scenarios end to end for the first time.
+Scenario 4 parks an ₹1,800 subscription for human approval, a person approves
+it, and it gets paid — a real Razorpay order id came back. But the event written
+to the audit trail read:
+
+```
+APPROVED   order_MOCK_e883df662fb7cb (mock)
+Waiting for your approval: ₹1,800 ... Nothing has been paid yet.
+```
+
+Money moved, an order existed, and the permanent record said nothing had been
+paid. In a project whose entire argument is that the log is the product, this is
+the worst class of bug there is — worse than crashing, because it is quiet.
+
+**What I thought was wrong.** That `resolveStepUp` was writing the parked event
+a second time instead of writing a new one — some copy-paste in the approval
+branch. I went looking for a duplicated `append` call.
+
+**What was actually wrong.** The approval path is correct. The bug is one line
+in the shared `execute()` helper: it logged `reason: result.reason`, where
+`result` is the *policy evaluation of the request*. Re-evaluating an ₹1,800
+purchase against a ₹1,500 threshold correctly returns `step_up_required` again —
+that is exactly what it should return, since the amount really is above the
+threshold. So the reason string attached to a successful payment was the
+"waiting for your approval" text, faithfully describing a request rather than
+the outcome.
+
+The subtlety is that nothing was broken in the decision logic. The decision was
+right, the payment was right, the re-evaluation was right. Only the sentence a
+human reads was wrong, which is the part that is never covered by asserting on
+`decision === 'step_up_approved'`.
+
+**The fix.** `execute()` now composes the reason from what happened rather than
+reusing the request's evaluation: an approved step-up logs "Approved by you,
+re-checked against the mandate, and paid: ₹1,800 … That leaves ₹6,200 of the
+₹10,000 monthly budget." The agent-facing message is built from the same string,
+so the model cannot be handed "nothing has been paid yet" about a purchase that
+went through either.
+
+**The test that stops it recurring.** A test that approves a parked step-up and
+asserts the logged reason does NOT match /nothing has been paid/i or /waiting
+for your approval/i, and DOES say it was approved — asserting on the prose, not
+just the decision enum, because the prose was the only thing wrong.
