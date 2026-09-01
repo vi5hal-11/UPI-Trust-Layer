@@ -58,6 +58,9 @@ user ──▶ Shopping Agent (LLM) ──▶ [ attempt_purchase ] ──▶ Gat
 ```
 src/
   types.ts                  zod schemas + shared event/decision types
+  config/
+    env.ts                  loads .env once; everything reads config from here
+    policy.default.json     the mandate in force
   gatekeeper/
     policyEngine.ts         pure function — the entire trust boundary. No I/O.
     mandate.ts              load, expiry check, integrity hash
@@ -67,8 +70,14 @@ src/
   agent/shoppingAgent.ts    Claude tool-use loop, exactly one tool exposed
   server/index.ts           Express API + static dashboard
 dashboard/index.html        judge-facing audit view, single file
-scripts/demo-scenarios.ts   the four demo scenarios
-tests/policyEngine.test.ts  policy engine tests, including adversarial ones
+scripts/
+  demo-scenarios.ts         the four demo scenarios
+  check-secrets.ts          pre-push credential scan (npm run check:secrets)
+tests/
+  policyEngine.test.ts      24 tests, including the adversarial ones
+  auditStore.test.ts        18 tests — what counts as spend, append-only
+  gatekeeper.test.ts        23 tests — zero-rail-calls, approval re-check
+  agentIsolation.test.ts     3 tests — the LLM has no path to the rail
 ```
 
 ## Invariants — every one of these needs a test
@@ -111,10 +120,11 @@ tests/policyEngine.test.ts  policy engine tests, including adversarial ones
 
 ## Definition of done
 
-- `npm test` green, `npx tsc --noEmit` clean.
+- `npm test` green (68 tests), `npx tsc --noEmit` clean.
 - `npm run demo` runs all four scenarios end to end with no API keys set.
 - `npm start` serves a dashboard where a stranger can tell, in ten seconds, what
   was allowed, what was blocked, and why.
 - README opens with the NPCI UAP / Feb 2026 Razorpay pilot grounding, and has an
   honest "what I deliberately did not build" section.
-- Public repo, no secrets committed, `.env.example` only.
+- Public repo, no secrets committed, `.env.example` only. `npm run check:secrets`
+  before every push.
