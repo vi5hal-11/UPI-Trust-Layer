@@ -1,0 +1,120 @@
+# UPI Agent Trust Layer — project context
+
+Claude Code reads this file automatically. It keeps every session working to the
+same invariants.
+
+---
+
+## What this is
+
+A policy gatekeeper between an AI shopping agent and Razorpay's payment APIs.
+Spend caps, category rules and step-up confirmation are enforced in
+deterministic code, and every decision is written to an append-only audit trail.
+
+Built for the Razorpay AI Buildathon, Track 01 (Growth & Agentic Commerce).
+Deadline: **5 September**. Scope discipline matters more than feature count.
+
+## The one rule that governs every design decision
+
+> **The LLM never touches Razorpay.**
+
+The agent's entire capability surface is one tool:
+`attempt_purchase(item, amount_inr, category, merchant?)`. It has no Razorpay
+key, no endpoint, no import path to the payment client, and no route to approve
+its own step-up.
+
+A prompt is not a security boundary. If "don't spend over ₹2,000" lives only in
+a system prompt, it holds until the first jailbreak or confused tool call. So:
+the model may request anything; a pure function decides; the decision is
+identical every time.
+
+When any change is proposed, the test is: *does this let the model influence the
+money path in a way that isn't deterministic and logged?* If yes, reject it.
+
+## Locked decisions — do not re-litigate
+
+| Decision | Choice | Why |
+|---|---|---|
+| Stack | Node 20+ / TypeScript, ESM, `tsx` (no build step) | Reuses existing agent-orchestration patterns; no compile step during a 4-day build |
+| Razorpay access | Direct REST via the official SDK, behind the gatekeeper | MCP would hand the agent payment tools — exactly what this project argues against |
+| Step-up channel | Button in the dashboard, not SMS/webhook | The policy re-check is real; the notification channel is out of scope and disclosed |
+| Mandate | AP2-*shaped* (scoped, expiring, tamper-evident) with SHA-256 integrity, not signature verification | Honest simplification, stated in the README |
+| Audit store | SQLite, append-only | Credible, zero-config, and evidence-shaped |
+| Persistence of intent | Never update or delete a row | A resolution is a new event pointing back at the one it resolves |
+
+## Architecture
+
+```
+user ──▶ Shopping Agent (LLM) ──▶ [ attempt_purchase ] ──▶ Gatekeeper ──▶ Razorpay
+              no keys, no rails         the only door      deterministic    test mode
+                                                                 │
+                                                                 ▼
+                                                         Append-only audit trail
+                                                                 │
+                                                                 ▼
+                                                          Audit dashboard
+```
+
+```
+src/
+  types.ts                  zod schemas + shared event/decision types
+  gatekeeper/
+    policyEngine.ts         pure function — the entire trust boundary. No I/O.
+    mandate.ts              load, expiry check, integrity hash
+    service.ts              orchestration: decide → pay → log
+  razorpay/client.ts        the ONLY module that may import the Razorpay SDK
+  audit/store.ts            append-only SQLite audit trail
+  agent/shoppingAgent.ts    Claude tool-use loop, exactly one tool exposed
+  server/index.ts           Express API + static dashboard
+dashboard/index.html        judge-facing audit view, single file
+scripts/demo-scenarios.ts   the four demo scenarios
+tests/policyEngine.test.ts  policy engine tests, including adversarial ones
+```
+
+## Invariants — every one of these needs a test
+
+1. **A hard violation beats a step-up.** If a purchase both breaks a rule and
+   exceeds the approval threshold, it is *blocked*, never parked. Otherwise a
+   human can be socially engineered into approving what the mandate forbids.
+2. **Step-up is re-evaluated at approval time, not request time.** The month's
+   spend moves while a request sits parked; a stale approval must not overspend
+   the cap.
+3. **All violations are collected, not just the first.** The blocked-purchase
+   demo depends on showing three reasons at once.
+4. **Deny list beats allow list.** Always.
+5. **Only money that moved counts as spend.** `allowed` and `step_up_approved`
+   count. `blocked`, `step_up_required`, `step_up_denied` and `payment_failed`
+   never touch the budget.
+6. **`payment_failed` is its own decision.** Policy said yes but the rail
+   failed — that must not read as a successful purchase, and must not count as
+   spend.
+7. **Every agent-produced object is validated before it reaches the policy
+   engine.** Malformed input is logged as a blocked event, never crashes the
+   request.
+8. **Test-mode keys only.** Refuse to start if `RAZORPAY_KEY_ID` doesn't begin
+   with `rzp_test_`.
+9. **Mock mode must work with zero credentials.** With no keys set, decisions
+   are real and only the final Razorpay call is stubbed, clearly labelled as
+   mock.
+
+## Conventions
+
+- `policyEngine.evaluate()` stays pure — no database, no network, no clock of
+  its own (`now` is passed in). It is the most-tested file in the repo.
+- Decision `reason` strings are written for a **non-technical reader**, in
+  rupees with Indian grouping (`₹15,000`). These strings are what a judge
+  actually reads in the video.
+- Machine-readable `violations[]` codes travel alongside the prose reason so the
+  dashboard can style them.
+- Errors say what happened and what to do next. No silent catches.
+- Every new rule gets a test before it gets a UI.
+
+## Definition of done
+
+- `npm test` green, `npx tsc --noEmit` clean.
+- `npm run demo` runs all four scenarios end to end with no API keys set.
+- `npm start` serves a dashboard where a stranger can tell, in ten seconds, what
+  was allowed, what was blocked, and why.
+- README opens with the NPCI UAP / Feb 2026 Razorpay pilot grounding, and has an
+  honest "what I deliberately did not build" section.
+- Public repo, no secrets committed, `.env.example` only.

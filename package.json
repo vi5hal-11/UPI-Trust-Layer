@@ -1,0 +1,34 @@
+{
+  "name": "upi-agent-trust-layer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A deterministic policy gatekeeper between an AI shopping agent and Razorpay's payment APIs.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server/index.ts",
+    "start": "tsx src/server/index.ts",
+    "demo": "tsx scripts/demo-scenarios.ts",
+    "demo:agent": "tsx scripts/demo-scenarios.ts --agent",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.65.0",
+    "better-sqlite3": "^11.10.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "razorpay": "^2.9.6",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.7"
+  }
+}
