@@ -20,5 +20,7 @@
     "allowJs": false
   },
   "include": ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"],
-  "exclude": ["node_modules", "data"]
+  // tests/e2e is a browser + Playwright environment with its own tsconfig.
+  // It cannot share this project's NodeNext module resolution.
+  "exclude": ["node_modules", "data", "tests/e2e"]
 }
