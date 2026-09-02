@@ -59,6 +59,15 @@ const SPEND_PLACEHOLDERS = SPENDING_DECISIONS.map(() => '?').join(', ');
 export class AuditStore {
   private readonly db: Database.Database;
 
+  /**
+   * The underlying connection, so sibling tables (idempotency keys) live in the
+   * same file and share its transaction boundary. Deliberately narrow: nothing
+   * outside this module may write to the events table through it.
+   */
+  get connection(): Database.Database {
+    return this.db;
+  }
+
   constructor(dbPath: string) {
     if (dbPath !== ':memory:') {
       mkdirSync(dirname(dbPath), { recursive: true });

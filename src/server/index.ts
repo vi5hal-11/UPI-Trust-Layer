@@ -17,6 +17,17 @@ import { isMandateExpired, loadMandate } from '../gatekeeper/mandate.js';
 import { Gatekeeper, GatekeeperError } from '../gatekeeper/service.js';
 import { agentAvailable, runShoppingAgent } from '../agent/shoppingAgent.js';
 import { isLiveMode, modeLabel } from '../razorpay/client.js';
+import { IdempotencyConflict, IdempotencyStore } from '../audit/idempotency.js';
+import {
+  clearSessionCookie,
+  isCorrectSecret,
+  isValidSession,
+  issueSession,
+  readSessionCookie,
+  requireApproval,
+  setSessionCookie,
+} from './auth.js';
+import { rateLimit } from './rateLimit.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -32,8 +43,52 @@ const STATS_WINDOW = 1000;
 
 export function createApp(gatekeeper: Gatekeeper, store: AuditStore) {
   const app = express();
+  const idempotency = new IdempotencyStore(store.connection);
+
+  // Behind a proxy (Railway, Render, Fly) the client IP is in X-Forwarded-For.
+  app.set('trust proxy', 1);
   app.use(express.json({ limit: '64kb' }));
   app.use(express.static(dashboardDir));
+
+  /** Liveness: the process is up. Used by the platform's health check. */
+  app.get('/health', (_req: Request, res: Response) => {
+    res.json({ status: 'ok', uptime_s: Math.round(process.uptime()) });
+  });
+
+  /** Readiness: the parts that must work before traffic is useful. */
+  app.get('/ready', (_req: Request, res: Response) => {
+    try {
+      store.list(1);
+      res.json({ status: 'ready', mandate: gatekeeper.mandateInForce.mandate_id });
+    } catch (err) {
+      res.status(503).json({
+        status: 'not-ready',
+        error: err instanceof Error ? err.message : 'audit store unavailable',
+      });
+    }
+  });
+
+  /* ---- session: unlocks approvals, nothing else ---- */
+
+  app.post('/api/session', rateLimit({ windowMs: 60_000, max: 5 }), (req: Request, res: Response) => {
+    const secret = (req.body as { secret?: unknown } | undefined)?.secret;
+    if (!isCorrectSecret(secret)) {
+      // Deliberately vague: do not confirm whether a secret is even configured.
+      res.status(401).json({ error: 'That approval secret is not correct.' });
+      return;
+    }
+    setSessionCookie(res, issueSession());
+    res.json({ unlocked: true });
+  });
+
+  app.delete('/api/session', (_req: Request, res: Response) => {
+    clearSessionCookie(res);
+    res.json({ unlocked: false });
+  });
+
+  app.get('/api/session', (req: Request, res: Response) => {
+    res.json({ unlocked: isValidSession(readSessionCookie(req)) });
+  });
 
   app.get('/api/state', (_req: Request, res: Response) => {
     const mandate = gatekeeper.mandateInForce;
@@ -78,19 +133,44 @@ export function createApp(gatekeeper: Gatekeeper, store: AuditStore) {
     });
   });
 
-  /** Raw intent. Deliberately unvalidated here - the gatekeeper validates. */
-  app.post('/api/intent', async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const { retry_of_event_id, ...intent } = (req.body ?? {}) as Record<string, unknown>;
-      const outcome = await gatekeeper.attemptPurchase(intent, {
-        actor: 'agent',
-        ...(typeof retry_of_event_id === 'string' ? { retry_of_event_id } : {}),
-      });
-      res.json(outcome);
-    } catch (err) {
-      next(err);
-    }
-  });
+  /**
+   * Raw intent. Deliberately unvalidated here - the gatekeeper validates.
+   *
+   * Honours an optional `Idempotency-Key` header: an agent that retries after a
+   * timeout must not create a second real order for one intent.
+   */
+  app.post(
+    '/api/intent',
+    rateLimit({ windowMs: 60_000, max: 30 }),
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const { retry_of_event_id, ...intent } = (req.body ?? {}) as Record<string, unknown>;
+        const key = req.header('Idempotency-Key')?.trim();
+        const requestHash = IdempotencyStore.hashRequest(req.body ?? {});
+
+        if (key) {
+          const hit = idempotency.lookup(key, requestHash);
+          if (hit) {
+            // Replay the original outcome verbatim. No policy evaluation, no
+            // second Razorpay order, no second audit event.
+            res.setHeader('Idempotent-Replay', 'true');
+            res.type('application/json').send(hit.response_json);
+            return;
+          }
+        }
+
+        const outcome = await gatekeeper.attemptPurchase(intent, {
+          actor: 'agent',
+          ...(typeof retry_of_event_id === 'string' ? { retry_of_event_id } : {}),
+        });
+
+        if (key) idempotency.record(key, requestHash, outcome.event.event_id, outcome);
+        res.json(outcome);
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
 
   app.post('/api/chat', async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -106,7 +186,7 @@ export function createApp(gatekeeper: Gatekeeper, store: AuditStore) {
     }
   });
 
-  app.post('/api/stepup/:id/approve', async (req: Request, res: Response, next: NextFunction) => {
+  app.post('/api/stepup/:id/approve', requireApproval, async (req: Request, res: Response, next: NextFunction) => {
     try {
       res.json(await gatekeeper.resolveStepUp(String(req.params.id), true));
     } catch (err) {
@@ -114,7 +194,7 @@ export function createApp(gatekeeper: Gatekeeper, store: AuditStore) {
     }
   });
 
-  app.post('/api/stepup/:id/deny', async (req: Request, res: Response, next: NextFunction) => {
+  app.post('/api/stepup/:id/deny', requireApproval, async (req: Request, res: Response, next: NextFunction) => {
     try {
       res.json(await gatekeeper.resolveStepUp(String(req.params.id), false));
     } catch (err) {
@@ -124,7 +204,8 @@ export function createApp(gatekeeper: Gatekeeper, store: AuditStore) {
 
   // Errors say what happened. Nothing is swallowed.
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err instanceof GatekeeperError ? err.status : 500;
+    const status =
+      err instanceof GatekeeperError || err instanceof IdempotencyConflict ? err.status : 500;
     const message = err instanceof Error ? err.message : 'Unknown error';
     if (status >= 500) console.error('[server]', err);
     res.status(status).json({ error: message });

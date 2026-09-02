@@ -62,6 +62,20 @@ export class DashboardPage {
       .waitFor();
   }
 
+  /**
+   * Approvals are gated. Unlocking through the API rather than the dialog
+   * keeps the money-path tests focused on policy, not on typing into a form -
+   * the dialog itself is covered by the rejection test.
+   */
+  async unlockApprovals() {
+    const secret = process.env.APPROVAL_SECRET;
+    if (!secret) throw new Error('APPROVAL_SECRET is not set; cannot unlock approvals.');
+    const res = await this.page.request.post('/api/session', { data: { secret } });
+    if (!res.ok()) throw new Error(`Unlock failed: ${res.status()}`);
+    await this.page.reload();
+    await this.events.first().waitFor({ state: 'visible' });
+  }
+
   /** Drive a purchase through the real API, as the agent would. */
   async attemptPurchase(body: {
     item: string;

@@ -8,13 +8,15 @@ import type { AuditEvent } from '@/lib/api';
 interface ApprovalBannerProps {
   pending: AuditEvent[];
   onResolve: (eventId: string, approve: boolean) => Promise<void>;
+  /** Approvals move money, so they are gated. Reads never are. */
+  unlocked: boolean;
 }
 
 /**
  * The only actionable thing on the page, so it sits directly under the header
  * and is the one element allowed to draw attention to itself.
  */
-export function ApprovalBanner({ pending, onResolve }: ApprovalBannerProps) {
+export function ApprovalBanner({ pending, onResolve, unlocked }: ApprovalBannerProps) {
   const [busy, setBusy] = useState(false);
 
   async function handle(eventId: string, approve: boolean) {
@@ -42,6 +44,11 @@ export function ApprovalBanner({ pending, onResolve }: ApprovalBannerProps) {
           <h2 className="text-[10.5px] font-bold uppercase tracking-[0.09em] text-wait">
             Waiting for your approval
           </h2>
+          {!unlocked && (
+            <p className="mt-1 text-[12.5px] text-text-dim">
+              Unlock approvals in the header to release or decline this payment.
+            </p>
+          )}
 
           <div className="mt-3 grid gap-3">
             {pending.map((e) => (
@@ -58,12 +65,17 @@ export function ApprovalBanner({ pending, onResolve }: ApprovalBannerProps) {
                 <div className="flex gap-2">
                   <Button
                     variant="primary"
-                    disabled={busy}
+                    disabled={busy || !unlocked}
+                    title={unlocked ? undefined : 'Unlock approvals first'}
                     onClick={() => void handle(e.event_id, true)}
                   >
                     Approve
                   </Button>
-                  <Button disabled={busy} onClick={() => void handle(e.event_id, false)}>
+                  <Button
+                    disabled={busy || !unlocked}
+                    title={unlocked ? undefined : 'Unlock approvals first'}
+                    onClick={() => void handle(e.event_id, false)}
+                  >
                     Decline
                   </Button>
                 </div>

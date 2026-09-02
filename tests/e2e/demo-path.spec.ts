@@ -86,6 +86,7 @@ test.describe('demo path', () => {
     // A unique item name per run, so assertions can never match a seeded row.
     const item = `e2e storage plan ${Date.now()}`;
 
+    await dash.unlockApprovals();
     await dash.attemptPurchase({ item, amount_inr: amount, category: 'subscriptions' });
 
     // It parks rather than paying, and says so.

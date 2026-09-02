@@ -8,13 +8,14 @@ interface HeaderProps {
   mode: DashboardState['mode'] | null;
   dark: boolean;
   onToggleTheme: () => void;
+  approvals: React.ReactNode;
 }
 
 /**
  * The one place glass is used heavily. Everything below it is solid, because
  * the evidence needs contrast more than it needs translucency.
  */
-export function Header({ mode, dark, onToggleTheme }: HeaderProps) {
+export function Header({ mode, dark, onToggleTheme, approvals }: HeaderProps) {
   return (
     <header className="sticky top-0 z-30 border-b border-hairline bg-panel-glass backdrop-blur-xl backdrop-saturate-150">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5">
@@ -43,6 +44,8 @@ export function Header({ mode, dark, onToggleTheme }: HeaderProps) {
               </Badge>
             </>
           )}
+
+          {approvals}
 
           <Button
             variant="ghost"

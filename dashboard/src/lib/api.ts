@@ -115,3 +115,27 @@ export async function resolveStepUp(eventId: string, approve: boolean): Promise<
     throw new Error(body.error ?? `Could not ${approve ? 'approve' : 'decline'} this (HTTP ${res.status}).`);
   }
 }
+
+/* ---- approvals are the only thing behind a secret ---- */
+
+export async function getSession(): Promise<boolean> {
+  const res = await fetch('/api/session', { cache: 'no-store' });
+  if (!res.ok) return false;
+  return ((await res.json()) as { unlocked: boolean }).unlocked;
+}
+
+export async function unlockApprovals(secret: string): Promise<void> {
+  const res = await fetch('/api/session', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ secret }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? 'Could not unlock approvals.');
+  }
+}
+
+export async function lockApprovals(): Promise<void> {
+  await fetch('/api/session', { method: 'DELETE' });
+}

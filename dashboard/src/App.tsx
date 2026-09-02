@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Toaster, toast } from 'sonner';
 import { Backdrop } from '@/components/Backdrop';
@@ -7,17 +7,42 @@ import { MandateCard } from '@/components/MandateCard';
 import { BudgetCard } from '@/components/BudgetCard';
 import { ApprovalBanner } from '@/components/ApprovalBanner';
 import { EventRow } from '@/components/EventRow';
+import { UnlockDialog } from '@/components/UnlockDialog';
 import { Segmented, type SegmentOption } from '@/components/ui/segmented';
 import { useDashboardState } from '@/hooks/use-dashboard-state';
 import { useTheme } from '@/hooks/use-theme';
 import { motionTokens, springs } from '@/lib/motion';
 import { inr } from '@/lib/utils';
-import { DECISION_GROUP, DECISION_LABEL, resolveStepUp } from '@/lib/api';
+import {
+  DECISION_GROUP,
+  DECISION_LABEL,
+  getSession,
+  lockApprovals,
+  resolveStepUp,
+  unlockApprovals,
+} from '@/lib/api';
 
 export default function App() {
   const { state, stale, arrivals, refresh } = useDashboardState();
   const { dark, toggle } = useTheme();
   const [tab, setTab] = useState('all');
+  const [unlocked, setUnlocked] = useState(false);
+
+  useEffect(() => {
+    void getSession().then(setUnlocked);
+  }, []);
+
+  const handleUnlock = useCallback(async (secret: string) => {
+    await unlockApprovals(secret);
+    setUnlocked(true);
+    toast.success('Approvals unlocked');
+  }, []);
+
+  const handleLock = useCallback(async () => {
+    await lockApprovals();
+    setUnlocked(false);
+    toast('Approvals locked');
+  }, []);
 
   /* A decision landing is the live-demo moment. Announce it. */
   useEffect(() => {
@@ -82,7 +107,14 @@ export default function App() {
   return (
     <>
       <Backdrop />
-      <Header mode={state?.mode ?? null} dark={dark} onToggleTheme={toggle} />
+      <Header
+        mode={state?.mode ?? null}
+        dark={dark}
+        onToggleTheme={toggle}
+        approvals={
+          <UnlockDialog unlocked={unlocked} onUnlock={handleUnlock} onLock={handleLock} />
+        }
+      />
 
       <main className="mx-auto max-w-5xl px-5 pb-20">
         {!state ? (
@@ -92,7 +124,11 @@ export default function App() {
         ) : (
           <>
             <div className="pt-5">
-              <ApprovalBanner pending={state.pending_step_ups} onResolve={handleResolve} />
+              <ApprovalBanner
+                pending={state.pending_step_ups}
+                onResolve={handleResolve}
+                unlocked={unlocked}
+              />
             </div>
 
             <motion.div
