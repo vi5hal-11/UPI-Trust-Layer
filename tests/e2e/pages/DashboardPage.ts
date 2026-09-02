@@ -25,7 +25,8 @@ export class DashboardPage {
   }
 
   async goto() {
-    await this.page.goto('/');
+    // The dashboard moved to /dashboard when the landing page took over /.
+    await this.page.goto('/dashboard');
     // The first paint happens before the first poll resolves, so wait for real
     // data rather than a load event.
     await this.events.first().waitFor({ state: 'visible' });

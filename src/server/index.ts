@@ -202,6 +202,23 @@ export function createApp(gatekeeper: Gatekeeper, store: AuditStore) {
     }
   });
 
+  /**
+   * SPA fallback. The client renders the landing page at / and the dashboard at
+   * /dashboard from one bundle, so a refresh or a shared link on /dashboard has
+   * to return index.html rather than a 404.
+   *
+   * Deliberately after the API routes and narrow: an unknown /api/* path should
+   * still 404 as JSON rather than quietly returning a web page.
+   */
+  app.get(/^\/(?!api\/).*/, (_req: Request, res: Response, next: NextFunction) => {
+    const entry = resolve(dashboardDir, 'index.html');
+    if (!existsSync(entry)) {
+      next();
+      return;
+    }
+    res.sendFile(entry);
+  });
+
   // Errors say what happened. Nothing is swallowed.
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     const status =

@@ -69,6 +69,9 @@ const buttonVariants = cva(
       variant: {
         default: 'border border-hairline-strong bg-panel text-text hover:bg-bg-subtle',
         primary: 'bg-ok text-white hover:brightness-110 dark:text-[#04210f]',
+        // Brand blue, for calls to action. Deliberately NOT the green above:
+        // green means "paid" everywhere else in this product.
+        brand: 'bg-brand text-white hover:brightness-110',
         ghost: 'text-text-dim hover:bg-bg-subtle hover:text-text',
       },
       size: {
