@@ -35,7 +35,8 @@ money path in a way that isn't deterministic and logged?* If yes, reject it.
 
 | Decision | Choice | Why |
 |---|---|---|
-| Stack | Node 20+ / TypeScript, ESM, `tsx` (no build step) | Reuses existing agent-orchestration patterns; no compile step during a 4-day build |
+| Server stack | Node 20+ / TypeScript, ESM, `tsx` (no build step) | Reuses existing agent-orchestration patterns; no compile step during a 4-day build |
+| Dashboard stack | React 19 + Vite + Tailwind v4 + Radix + `motion/react` | Deliberate reversal of the original "single file, no build" rule, made on 2 Sept for a richer judge-facing UI. `npm start` runs the build first (`prestart`), so a fresh clone still only needs `npm install && npm start` |
 | Razorpay access | Direct REST via the official SDK, behind the gatekeeper | MCP would hand the agent payment tools — exactly what this project argues against |
 | Step-up channel | Button in the dashboard, not SMS/webhook | The policy re-check is real; the notification channel is out of scope and disclosed |
 | Mandate | AP2-*shaped* (scoped, expiring, tamper-evident) with SHA-256 integrity, not signature verification | Honest simplification, stated in the README |
@@ -69,11 +70,22 @@ src/
   audit/store.ts            append-only SQLite audit trail
   agent/shoppingAgent.ts    Claude tool-use loop, exactly one tool exposed
   server/index.ts           Express API + static dashboard
-dashboard/index.html        judge-facing audit view, single file
+dashboard/
+  index.html                Vite entry; sets the theme class before first paint
+  src/
+    App.tsx                 layout, segmented filter, toasts
+    lib/motion.ts           the ONLY source of durations, easings, springs
+    lib/api.ts              types mirroring GET /api/state
+    components/             Header, MandateCard, BudgetCard, EventRow, Backdrop
+  dist/                     build output, gitignored, served by Express
 scripts/
   demo-scenarios.ts         the four demo scenarios
   check-secrets.ts          pre-push credential scan (npm run check:secrets)
 tests/
+  e2e/                      Playwright: the demo path, run by `npm run test:e2e`
+    demo-path.spec.ts       5 tests - block, rail, filter, step-up, toast
+    pages/DashboardPage.ts  page object; role/text selectors over CSS
+    tsconfig.json           browser env - cannot share the server's NodeNext
   policyEngine.test.ts      24 tests, including the adversarial ones
   auditStore.test.ts        18 tests — what counts as spend, append-only
   gatekeeper.test.ts        23 tests — zero-rail-calls, approval re-check
@@ -120,7 +132,18 @@ tests/
 
 ## Definition of done
 
-- `npm test` green (68 tests), `npx tsc --noEmit` clean.
+- `npm test` green (68 tests), `npm run typecheck` clean (checks the server,
+  the dashboard, and the E2E suite as three separate TypeScript projects —
+  they have genuinely different module resolution and cannot share one).
+- `npm run test:e2e` green (5 Playwright tests, chromium only). Deliberately
+  NOT part of `npm test`: it needs a build, a browser and a running server,
+  and the fast unit loop must stay fast. It starts the server itself and
+  reuses one already running. The suite shares the append-only audit trail, so
+  the step-up test reads the live budget first and skips — rather than fails —
+  once repeated runs have consumed the monthly cap. `npm run demo` resets it.
+- Vitest config lives in `vitest.config.ts`, deliberately separate from
+  `vite.config.ts` — the latter sets `root: 'dashboard'` and would otherwise
+  make Vitest look for the server suite in the wrong directory.
 - `npm run demo` runs all four scenarios end to end with no API keys set.
 - `npm start` serves a dashboard where a stranger can tell, in ten seconds, what
   was allowed, what was blocked, and why.
