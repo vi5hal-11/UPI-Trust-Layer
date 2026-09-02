@@ -40,8 +40,15 @@ function approvalSecret(): string {
 export const env = {
   razorpayKeyId: str('RAZORPAY_KEY_ID'),
   razorpayKeySecret: str('RAZORPAY_KEY_SECRET'),
-  anthropicApiKey: str('ANTHROPIC_API_KEY'),
-  agentModel: str('AGENT_MODEL', 'claude-opus-5'),
+  /**
+   * Any OpenAI-compatible provider. Defaults to Groq because it has a free
+   * tier that needs no card, which keeps the agent path runnable by anyone who
+   * clones this. ANTHROPIC_API_KEY is still read as a fallback so an existing
+   * .env keeps working.
+   */
+  agentApiKey: str('AGENT_API_KEY') || str('GROQ_API_KEY') || str('ANTHROPIC_API_KEY'),
+  agentBaseUrl: str('AGENT_BASE_URL', 'https://api.groq.com/openai/v1'),
+  agentModel: str('AGENT_MODEL', 'llama-3.3-70b-versatile'),
   port: Number.parseInt(str('PORT', '3000'), 10) || 3000,
   auditDbPath: str('AUDIT_DB_PATH', 'data/audit.db'),
   policyPath: str('POLICY_PATH', 'src/config/policy.default.json'),

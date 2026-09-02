@@ -15,4 +15,10 @@ if (!root) throw new Error('Missing #root — dashboard/index.html did not load 
  */
 const isDashboard = window.location.pathname.replace(/\/+$/, '') === '/dashboard';
 
+// The static <title> describes the product for link previews and search. Once
+// we know which route rendered, say which page this actually is.
+document.title = isDashboard
+  ? 'Audit trail — UPI Agent Trust Layer'
+  : 'UPI Agent Trust Layer — policy gatekeeper for agent payments';
+
 createRoot(root).render(<StrictMode>{isDashboard ? <App /> : <Landing />}</StrictMode>);

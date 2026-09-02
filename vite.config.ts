@@ -10,9 +10,25 @@ import { resolve } from 'node:path';
  * `npm start` runs this build first (see the prestart script), so a judge
  * with a fresh clone still only ever needs `npm install && npm start`.
  */
+/**
+ * og:image and canonical URLs must be absolute, so the origin is injected at
+ * build time. Set SITE_URL on the host after deploying; the localhost default
+ * keeps a local build honest rather than silently emitting a broken URL.
+ */
+const SITE_URL = (process.env.SITE_URL ?? 'http://localhost:3000').replace(/\/+$/, '');
+
 export default defineConfig({
   root: 'dashboard',
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    {
+      name: 'inject-site-url',
+      transformIndexHtml(html: string) {
+        return html.replaceAll('__SITE_URL__', SITE_URL);
+      },
+    },
+  ],
   resolve: {
     alias: { '@': resolve(import.meta.dirname, 'dashboard/src') },
   },

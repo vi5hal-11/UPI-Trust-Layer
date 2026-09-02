@@ -84,7 +84,8 @@ function wrap(text: string, width: number): string[] {
 async function main(): Promise<void> {
   if (useAgent && !agentAvailable()) {
     console.error(
-      `\n${paint.red}--agent needs ANTHROPIC_API_KEY in .env.${paint.reset}\n` +
+      `\n${paint.red}--agent needs AGENT_API_KEY in .env.${paint.reset}\n` +
+        `Get a free key at ${paint.bold}console.groq.com${paint.reset} (no card required).\n` +
         `Run ${paint.bold}npm run demo${paint.reset} instead - every policy decision is identical, ` +
         `there is just no model in front of it.\n`,
     );

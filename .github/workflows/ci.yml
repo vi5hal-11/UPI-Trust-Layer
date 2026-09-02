@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A second push should cancel the first run rather than queue behind it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Everything that needs no credentials. This must stay green for anyone who
+  # forks the repo, so it never touches Razorpay.
+  verify:
+    name: typecheck + unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck (server, dashboard, e2e)
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Dashboard build
+        run: npm run build
+
+      - name: No credentials in git history
+        run: npm run check:secrets
+
+  # The browser suite needs Razorpay test credentials, so it only runs where
+  # they are configured. A fork without secrets skips this rather than failing:
+  # a red badge that only means "no secrets here" teaches a reader nothing.
+  e2e:
+    name: end-to-end
+    runs-on: ubuntu-latest
+    needs: verify
+    env:
+      RAZORPAY_KEY_ID: ${{ secrets.RAZORPAY_KEY_ID }}
+      RAZORPAY_KEY_SECRET: ${{ secrets.RAZORPAY_KEY_SECRET }}
+      APPROVAL_SECRET: ${{ secrets.APPROVAL_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check credentials are configured
+        id: creds
+        run: |
+          if [ -n "$RAZORPAY_KEY_ID" ] && [ -n "$APPROVAL_SECRET" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping E2E - Razorpay test credentials are not configured for this repository."
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.creds.outputs.available == 'true'
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+        if: steps.creds.outputs.available == 'true'
+
+      - name: Install Chromium
+        if: steps.creds.outputs.available == 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Seed the four demo scenarios
+        if: steps.creds.outputs.available == 'true'
+        run: npm run demo
+
+      # Playwright starts the server itself (webServer in playwright.config.ts).
+      - name: End-to-end tests
+        if: steps.creds.outputs.available == 'true'
+        run: npm run test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ failure() && steps.creds.outputs.available == 'true' }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

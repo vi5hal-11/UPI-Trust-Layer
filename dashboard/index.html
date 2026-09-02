@@ -3,7 +3,48 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>UPI Agent Trust Layer — audit</title>
+
+    <title>UPI Agent Trust Layer — policy gatekeeper for agent payments</title>
+    <meta
+      name="description"
+      content="A deterministic policy gatekeeper between an AI shopping agent and Razorpay. Spend caps, category rules and human approval are enforced in code, not in a prompt, and every decision is written to an append-only audit trail."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="canonical" href="__SITE_URL__/" />
+    <meta name="theme-color" content="#08080A" />
+
+    <!-- Open Graph / Twitter. og:image must be absolute, so the origin is
+         injected at build time from SITE_URL (see vite.config.ts). -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="UPI Agent Trust Layer" />
+    <meta property="og:url" content="__SITE_URL__/" />
+    <meta
+      property="og:title"
+      content="An AI agent can spend your money. This decides whether it may."
+    />
+    <meta
+      property="og:description"
+      content="Spend caps, category rules and human approval enforced in deterministic code — not in a prompt. Every decision, allowed or refused, is written to an append-only audit trail."
+    />
+    <meta property="og:image" content="__SITE_URL__/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="A request travelling from an AI agent to a gatekeeper and stopping before it reaches Razorpay, with the caption: 0 calls to Razorpay."
+    />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="An AI agent can spend your money. This decides whether it may."
+    />
+    <meta
+      name="twitter:description"
+      content="Spend caps, category rules and human approval enforced in deterministic code — not in a prompt."
+    />
+    <meta name="twitter:image" content="__SITE_URL__/og.png" />
+
     <script>
       // Applied before first paint so the page never flashes the wrong theme.
       (() => {

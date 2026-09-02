@@ -251,7 +251,7 @@ function main(): void {
     console.log('  UPI Agent Trust Layer');
     console.log(`  mode      ${modeLabel()}`);
     console.log(
-      `  agent     ${agentAvailable() ? `available (${env.agentModel})` : 'direct mode - no ANTHROPIC_API_KEY set'}`,
+      `  agent     ${agentAvailable() ? `${env.agentModel} via ${env.agentBaseUrl}` : 'direct mode - no AGENT_API_KEY set'}`,
     );
     console.log(`  mandate   ${mandate.mandate_id} for ${mandate.principal}`);
     console.log(
