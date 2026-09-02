@@ -128,9 +128,14 @@ npm test            # 68 tests
 npm run typecheck
 ```
 
-With no Razorpay keys the app runs in **mock mode**: every policy decision is
-real and really logged, and only the final call to Razorpay is stubbed — the
-order id says `order_MOCK_…` so it can never be mistaken for a real one.
+Razorpay **test-mode** credentials are required — the service creates real
+orders and has no stubbed fallback, so it refuses to start without them. Copy
+`.env.example` to `.env` and set `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` from
+the Razorpay dashboard with the Test Mode toggle on.
+
+A key that does not begin with `rzp_test_` is refused at startup, with no flag
+to override it. An autonomous agent spending money should not be one
+environment variable away from moving real money.
 
 To create real Razorpay **test-mode** orders, copy `.env.example` to `.env` and
 set `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET`. To put a real LLM in front of the

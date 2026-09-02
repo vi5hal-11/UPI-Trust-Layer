@@ -3,14 +3,18 @@
  * Razorpay SDK, and nothing the model produces can reach it except as an
  * already-approved decision handed over by the gatekeeper.
  *
- * Two modes:
- *   MOCK - no keys configured. Every policy decision is still real and still
- *          logged; only this last call is stubbed, and the stub says so in the
- *          order id itself (order_MOCK_...).
- *   LIVE - keys configured. Real orders against Razorpay's TEST mode.
+ * There is no stubbed path here. Every order in this module is a real order
+ * created against Razorpay's TEST mode, so what the audit trail records is
+ * what Razorpay actually did.
  *
- * "Live" here means really calling Razorpay, never real money: a key that is
- * not a test key is refused at startup.
+ * TEST MODE ONLY, permanently. This service demonstrates an autonomous agent
+ * spending money; a public deployment of it must not be capable of moving real
+ * money, whatever is in the environment. A key that is not a test key is
+ * refused at startup and there is no flag to override that.
+ *
+ * Tests do not stub this module. The Gatekeeper takes its payment rail as a
+ * constructor argument, so a test injects a fake rail rather than relying on
+ * production code carrying a mock branch.
  */
 import Razorpay from 'razorpay';
 import { randomBytes } from 'node:crypto';
@@ -22,42 +26,56 @@ const TEST_KEY_PREFIX = 'rzp_test_';
 /**
  * CLAUDE.md invariant 8. Runs at import time, which is startup, because an
  * agent that can spend real money is the one failure this project exists to
- * prevent. Blank keys are fine - that is mock mode.
+ * prevent. Credentials are required: there is no keyless path.
  */
 function assertTestModeOnly(): void {
   const keyId = env.razorpayKeyId;
-  if (!keyId) return;
+
+  if (!keyId) {
+    throw new Error(
+      `Refusing to start: RAZORPAY_KEY_ID is not set.\n\n` +
+        `  This service creates real orders against Razorpay's test mode and has no\n` +
+        `  stubbed fallback, so it cannot start without credentials.\n\n` +
+        `  1. Copy .env.example to .env\n` +
+        `  2. Razorpay Dashboard -> switch to Test Mode -> Account & Settings -> API Keys\n` +
+        `  3. Put the test key id and secret in .env\n\n` +
+        `  Test-mode keys only. A key that does not begin with "${TEST_KEY_PREFIX}" is refused.`,
+    );
+  }
 
   if (!keyId.startsWith(TEST_KEY_PREFIX)) {
     throw new Error(
       `Refusing to start: RAZORPAY_KEY_ID must be a test-mode key beginning with ` +
         `"${TEST_KEY_PREFIX}", but it starts with "${keyId.slice(0, 8)}...". This project ` +
         `never talks to a live payment rail. Turn on the Test Mode toggle in the Razorpay ` +
-        `dashboard and generate a test key, or leave both Razorpay variables blank to run ` +
-        `in mock mode.`,
+        `dashboard and generate a test key.`,
     );
   }
 
   if (!env.razorpayKeySecret) {
     throw new Error(
       `Refusing to start: RAZORPAY_KEY_ID is set but RAZORPAY_KEY_SECRET is empty. ` +
-        `Set both, or clear both to run in mock mode.`,
+        `Both are required.`,
     );
   }
 }
 
 assertTestModeOnly();
 
-/** True when real Razorpay test-mode orders will be created. */
+/**
+ * Always true once this module has loaded: startup fails without credentials,
+ * so there is no configuration in which orders are not real.
+ *
+ * Kept as a function rather than inlined so the API response shape and the
+ * dashboard badge continue to read from one place.
+ */
 export function isLiveMode(): boolean {
-  return Boolean(env.razorpayKeyId && env.razorpayKeySecret);
+  return true;
 }
 
 /** What to print on the dashboard badge and in the boot banner. */
 export function modeLabel(): string {
-  return isLiveMode()
-    ? 'LIVE - creating real orders against Razorpay test mode'
-    : 'MOCK - no Razorpay keys set, payment call stubbed';
+  return 'Razorpay test mode - real orders, no real money';
 }
 
 let client: Razorpay | null = null;
@@ -87,18 +105,6 @@ function newReceipt(): string {
 export async function createOrder(intent: PurchaseIntent): Promise<RazorpayAction> {
   const amountPaise = Math.round(intent.amount_inr * 100);
   const receipt = newReceipt();
-
-  if (!isLiveMode()) {
-    return {
-      mock: true,
-      order_id: `order_MOCK_${randomBytes(7).toString('hex')}`,
-      amount_paise: amountPaise,
-      currency: 'INR',
-      status: 'created',
-      receipt,
-      created_at_unix: Math.floor(Date.now() / 1000),
-    };
-  }
 
   try {
     const order = await getClient().orders.create({

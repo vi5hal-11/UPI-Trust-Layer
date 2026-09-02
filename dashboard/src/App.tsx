@@ -159,9 +159,8 @@ export default function App() {
             </div>
 
             <footer className="mt-8 text-[11.5px] text-text-faint">
-              {state.mode.live
-                ? 'Orders are created against Razorpay test mode. No real money moves.'
-                : 'Mock mode: every decision above is real and was made by the policy engine. Only the final Razorpay call is stubbed.'}
+              Every order above was really created against Razorpay's test mode. No
+              real money moves, and the service refuses to start with a live key.
             </footer>
           </>
         )}

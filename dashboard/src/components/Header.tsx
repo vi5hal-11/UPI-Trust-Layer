@@ -36,7 +36,7 @@ export function Header({ mode, dark, onToggleTheme }: HeaderProps) {
                   animate={{ opacity: [1, 0.35, 1] }}
                   transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
                 />
-                {mode.live ? 'LIVE · Razorpay test mode' : 'MOCK · no Razorpay keys'}
+                {'Razorpay test mode'}
               </Badge>
               <Badge tone="neutral">
                 {mode.agent_available ? `agent: ${mode.agent_model}` : 'direct mode · no LLM'}

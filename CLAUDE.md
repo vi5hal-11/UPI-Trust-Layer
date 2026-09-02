@@ -114,9 +114,13 @@ tests/
    request.
 8. **Test-mode keys only.** Refuse to start if `RAZORPAY_KEY_ID` doesn't begin
    with `rzp_test_`.
-9. **Mock mode must work with zero credentials.** With no keys set, decisions
-   are real and only the final Razorpay call is stubbed, clearly labelled as
-   mock.
+9. **No stubbed payment path in production code.** Razorpay credentials are
+   required and the service refuses to start without them; there is no keyless
+   mode. Tests exercise the rail by injecting a fake through the Gatekeeper's
+   `createOrder` option, never by a mock branch inside `razorpay/client.ts`.
+   (Reversed on 2 Sept: this was previously "mock mode must work with zero
+   credentials". The service is now always deployed, so the stub was dead
+   weight that made the audit trail less trustworthy.)
 
 ## Conventions
 
