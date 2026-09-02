@@ -8,6 +8,7 @@
  * dashboard; the agent has no route to them.
  */
 import express, { type NextFunction, type Request, type Response } from 'express';
+import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { env } from '../config/env.js';
@@ -18,7 +19,13 @@ import { agentAvailable, runShoppingAgent } from '../agent/shoppingAgent.js';
 import { isLiveMode, modeLabel } from '../razorpay/client.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const dashboardDir = resolve(here, '../../dashboard');
+
+/**
+ * The dashboard is a Vite/React build, not a hand-written file. `npm start`
+ * runs the build first (see the prestart script), so this directory exists by
+ * the time the server boots.
+ */
+const dashboardDir = resolve(here, '../../dashboard/dist');
 
 /** How many events to scan when totalling what policy has refused. */
 const STATS_WINDOW = 1000;
@@ -132,7 +139,15 @@ function main(): void {
   const gatekeeper = new Gatekeeper({ mandate, store });
   const app = createApp(gatekeeper, store);
 
-  app.listen(env.port, () => {
+  if (!existsSync(dashboardDir)) {
+    console.error(
+      `\n  The dashboard has not been built yet (${dashboardDir} is missing).\n` +
+        `  Run "npm run build" and start again, or just use "npm start", which builds first.\n`,
+    );
+    process.exit(1);
+  }
+
+  const server = app.listen(env.port, () => {
     const { scope } = mandate;
     console.log('');
     console.log('  UPI Agent Trust Layer');
@@ -149,6 +164,19 @@ function main(): void {
     console.log(`  audit db  ${resolve(env.auditDbPath)}`);
     console.log(`  dashboard http://localhost:${env.port}`);
     console.log('');
+  });
+
+  // A raw EADDRINUSE stack trace tells a reader nothing they can act on.
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(
+        `\n  Port ${env.port} is already in use - something else is running there,\n` +
+          `  most likely an earlier "npm start" or "npm run dev" of this project.\n\n` +
+          `  Stop it, or start on another port:  PORT=3001 npm start\n`,
+      );
+      process.exit(1);
+    }
+    throw err;
   });
 }
 

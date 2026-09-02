@@ -12,3 +12,10 @@ data-*/
 # Planning docs kept locally, not part of the public submission
 DIRECTIONS.md
 BUILD_TASKS.md
+
+# Vite build output for the dashboard
+dashboard/dist/
+
+# Playwright artifacts
+test-results/
+playwright-report/
