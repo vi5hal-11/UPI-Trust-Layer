@@ -61,15 +61,21 @@ src/
   types.ts                  zod schemas + shared event/decision types
   config/
     env.ts                  loads .env once; everything reads config from here
-    policy.default.json     the mandate in force
+    policy.default.json     FIRST-RUN SEED only; the database is the source of truth
   gatekeeper/
     policyEngine.ts         pure function — the entire trust boundary. No I/O.
-    mandate.ts              load, expiry check, integrity hash
+    mandate.ts              expiry check, canonical-JSON integrity hash
     service.ts              orchestration: decide → pay → log
   razorpay/client.ts        the ONLY module that may import the Razorpay SDK
-  audit/store.ts            append-only SQLite audit trail
-  agent/shoppingAgent.ts    Claude tool-use loop, exactly one tool exposed
-  server/index.ts           Express API + static dashboard
+  audit/
+    store.ts                append-only SQLite audit trail
+    mandateStore.ts         mandates as rows: issue, revoke, never edit
+    idempotency.ts          a retried intent replays its original decision
+  agent/shoppingAgent.ts    tool-use loop, one tool, any OpenAI-compatible provider
+  server/
+    index.ts                Express API + the built dashboard
+    auth.ts                 HMAC session cookie gating the approval routes
+    rateLimit.ts            fixed-window limiter, no dependency
 dashboard/
   index.html                Vite entry; sets the theme class before first paint
   src/
@@ -84,8 +90,11 @@ scripts/
 tests/
   e2e/                      Playwright: the demo path, run by `npm run test:e2e`
     demo-path.spec.ts       5 tests - block, rail, filter, step-up, toast
+    hardening.spec.ts       9 tests - auth gate, idempotency, ops endpoints
+    landing.spec.ts         7 tests - thesis, diagram, punchline, deep link
     pages/DashboardPage.ts  page object; role/text selectors over CSS
     tsconfig.json           browser env - cannot share the server's NodeNext
+  mandateStore.test.ts      10 tests — append-only, tamper-evident, one-way revoke
   policyEngine.test.ts      24 tests, including the adversarial ones
   auditStore.test.ts        18 tests — what counts as spend, append-only
   gatekeeper.test.ts        23 tests — zero-rail-calls, approval re-check
@@ -121,6 +130,20 @@ tests/
    (Reversed on 2 Sept: this was previously "mock mode must work with zero
    credentials". The service is now always deployed, so the stub was dead
    weight that made the audit trail less trustworthy.)
+10. **A retry cannot pay twice.** `POST /api/intent` honours `Idempotency-Key`:
+    a repeat replays the original decision with no second policy evaluation, no
+    second rail call and no second audit event. The same key with a different
+    body is a 409 — that is always a caller bug, and answering it with some
+    other purchase's outcome would be worse than an error.
+11. **Releasing money requires authentication; reading never does.** Watching
+    the gatekeeper work is the demonstration, so `/api/state` is public.
+    Approving a step-up and issuing a mandate are not. An unauthenticated
+    approval endpoint would make the human control decorative.
+12. **Mandates are append-only and never edited.** New limits mean a new
+    mandate superseding the old row, because audit events reference the mandate
+    that authorised them. Revocation is the only permitted mutation and is
+    one-way. The integrity hash is computed on write, never accepted from the
+    caller.
 
 ## Conventions
 
@@ -136,10 +159,10 @@ tests/
 
 ## Definition of done
 
-- `npm test` green (68 tests), `npm run typecheck` clean (checks the server,
+- `npm test` green (78 tests), `npm run typecheck` clean (checks the server,
   the dashboard, and the E2E suite as three separate TypeScript projects —
   they have genuinely different module resolution and cannot share one).
-- `npm run test:e2e` green (5 Playwright tests, chromium only). Deliberately
+- `npm run test:e2e` green (21 Playwright tests, chromium only). Deliberately
   NOT part of `npm test`: it needs a build, a browser and a running server,
   and the fast unit loop must stay fast. It starts the server itself and
   reuses one already running. The suite shares the append-only audit trail, so

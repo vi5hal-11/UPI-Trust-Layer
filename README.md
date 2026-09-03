@@ -1,5 +1,7 @@
 # UPI Agent Trust Layer
 
+[![CI](https://github.com/vi5hal-11/UPI-Trust-Layer/actions/workflows/ci.yml/badge.svg)](https://github.com/vi5hal-11/UPI-Trust-Layer/actions/workflows/ci.yml)
+
 **A deterministic policy gatekeeper between an AI shopping agent and Razorpay.**
 Spend caps, category rules and human approval are enforced in code, not in a
 prompt, and every decision — allowed or not — is written to an append-only audit
@@ -9,8 +11,9 @@ Built for the Razorpay AI Buildathon, Track 01 (Growth & Agentic Commerce).
 
 ```bash
 npm install
-npm run demo     # four scenarios, no API keys needed
-npm start        # dashboard on http://localhost:3000
+cp .env.example .env    # add Razorpay TEST keys + an APPROVAL_SECRET
+npm run demo            # the four scenarios, against a fresh database
+npm start               # landing page at /, audit dashboard at /dashboard
 ```
 
 ---
@@ -73,6 +76,13 @@ had any runtime path to it, the import would throw. It doesn't. The same test
 then imports the gatekeeper service under the identical environment and watches
 it refuse, so the first half cannot pass vacuously.
 
+**The model is swappable; the boundary is not.** The agent talks to any
+OpenAI-compatible endpoint — Groq by default, or OpenAI, Cerebras, a local
+Ollama — set with `AGENT_BASE_URL` and `AGENT_MODEL`. That is not a convenience
+feature. If swapping a frontier model for a free open-weights one changed which
+purchases were allowed, the boundary would be in the prompt, and this project
+would be wrong.
+
 ---
 
 ## What the gatekeeper enforces
@@ -81,11 +91,11 @@ Every rule below is a test before it is a feature.
 
 | Rule | Behaviour |
 |---|---|
-| Per-transaction cap | ₹2,000. Over it → blocked. |
-| Rolling monthly cap | ₹10,000. Counts only money that actually moved. |
-| Category deny list | electronics, travel, gift-cards. **Deny always beats allow.** |
-| Category allow list | groceries, subscriptions, accessories, household. Empty list means "anything not denied". |
-| Step-up threshold | ₹1,500 and above needs a human. Inclusive. |
+| Per-transaction cap | Over it → blocked. |
+| Rolling monthly cap | Counts only money that actually moved. |
+| Category deny list | **Deny always beats allow.** |
+| Category allow list | Empty list means "anything not denied". |
+| Step-up threshold | At or above it, a human must approve. Inclusive. |
 | Mandate expiry | Past `expires_at` → blocked. |
 | Mandate integrity | SHA-256 over canonical JSON of `{principal, scope}`. Edited scope → blocked. |
 
@@ -111,35 +121,57 @@ And the properties that are easier to get wrong than to state:
    success.
 7. **Everything the model produces is validated** with zod before it reaches the
    policy engine. Malformed input is a logged blocked event, never a crash.
-8. **Test-mode keys only.** The app refuses to start if `RAZORPAY_KEY_ID` is not
-   an `rzp_test_` key.
+8. **Test-mode keys only, permanently.** The app refuses to start if
+   `RAZORPAY_KEY_ID` is not an `rzp_test_` key, and there is no flag to override
+   it. An autonomous agent spending money should not be one environment variable
+   away from moving real money.
+9. **No stubbed payment path.** Credentials are required; there is no keyless
+   mode. Every order in the audit trail is a real Razorpay test-mode order, so a
+   reader never has to work out whether an order id is genuine. Tests inject a
+   fake rail through the Gatekeeper's `createOrder` option rather than relying
+   on production code carrying a mock branch.
+10. **A retry cannot pay twice.** `POST /api/intent` honours an
+    `Idempotency-Key`; a repeat replays the original decision with no second
+    policy evaluation, no second rail call and no second audit event. The same
+    key with a *different* body is a `409`, because that is always a caller bug.
+11. **Releasing money requires authentication.** Reading the audit trail is
+    public — watching the gatekeeper work is the demonstration. Approving or
+    declining a purchase, and issuing a mandate, are not.
 
 ---
 
 ## Running it
 
-Nothing below requires an API key.
+Razorpay **test-mode** credentials and an `APPROVAL_SECRET` are required. The
+service creates real orders and has no stubbed fallback, so it refuses to start
+without them, and it tells you how to get them.
 
 ```bash
 npm install
-npm run demo        # the four scenarios, against a fresh database
-npm start           # dashboard at http://localhost:3000
-npm test            # 68 tests
-npm run typecheck
+cp .env.example .env
+
+npm run demo          # the four scenarios, against a fresh database
+npm start             # builds the dashboard, then serves it
+npm test              # 78 unit tests
+npm run test:e2e      # 21 browser tests (Playwright, chromium)
+npm run typecheck     # server, dashboard and e2e as three TS projects
 ```
 
-Razorpay **test-mode** credentials are required — the service creates real
-orders and has no stubbed fallback, so it refuses to start without them. Copy
-`.env.example` to `.env` and set `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` from
-the Razorpay dashboard with the Test Mode toggle on.
+**Razorpay keys** — Razorpay Dashboard → switch to **Test Mode** → Account &
+Settings → API Keys → Generate. No KYC is needed for test keys. The secret is
+shown once.
 
-A key that does not begin with `rzp_test_` is refused at startup, with no flag
-to override it. An autonomous agent spending money should not be one
-environment variable away from moving real money.
+**`APPROVAL_SECRET`** — unlocks step-up approvals. Generate one with:
 
-To create real Razorpay **test-mode** orders, copy `.env.example` to `.env` and
-set `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET`. To put a real LLM in front of the
-gatekeeper, set `ANTHROPIC_API_KEY` and run `npm run demo:agent`.
+```bash
+node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"
+```
+
+**Putting a real LLM in front of the gatekeeper** is optional. Without a key the
+demo runs in *direct mode* — intents go straight to the gatekeeper with no model
+in the loop, and every policy decision is identical, which is the point. To see
+the agent itself, get a free key at `console.groq.com` (no card), set
+`AGENT_API_KEY`, and run `npm run demo:agent`.
 
 Poking at it directly:
 
@@ -147,6 +179,9 @@ Poking at it directly:
 curl -X POST localhost:3000/api/intent -H 'content-type: application/json' \
   -d '{"item":"gaming keyboard","amount_inr":15000,"category":"electronics"}'
 ```
+
+> `npm run demo` wipes the database, so it cannot run while the server holds it
+> open. Stop the server first.
 
 ---
 
@@ -170,6 +205,33 @@ that the Razorpay dashboard stays empty after it.
 
 ---
 
+## Mandates
+
+A mandate is a row, not a file. It can be issued and revoked while the service
+is running, and the gatekeeper resolves the one in force **per decision**, so a
+new mandate applies to the very next purchase without a restart.
+
+```bash
+GET  /api/mandates              # public
+POST /api/mandates              # authenticated — supersedes the current one
+POST /api/mandates/:id/revoke   # authenticated — one-way
+```
+
+`src/config/policy.default.json` is only a first-run seed. After that the
+database is the source of truth.
+
+Mandates are append-only, enforced by triggers. A mandate is never edited:
+changing the limits issues a new one and leaves the old row exactly as it was,
+because audit events reference the mandate that authorised them and rewriting it
+would falsify the record of every decision made under it. Revocation is the only
+permitted mutation, and it cannot be undone.
+
+The integrity hash is computed on write and never accepted from the caller —
+otherwise anyone who could reach the API could mint a mandate that passes its
+own integrity check.
+
+---
+
 ## What I deliberately did not build
 
 Stated plainly, because a demo that volunteers its own limits is easier to trust
@@ -185,14 +247,17 @@ than one that doesn't.
   else would be a lie.
 - **AP2 cryptography.** The mandate is AP2-**shaped** — scoped, expiring,
   tamper-evident — with a SHA-256 integrity hash standing in for signature
-  verification. It detects a config file edited after issuance. It does **not**
-  prove who issued it: anyone who can write the file can recompute the hash.
-  Real AP2 needs signing keys and a verifier, which is a project of its own.
+  verification. It detects a mandate edited after issuance. It does **not**
+  prove who issued it. Real AP2 needs signing keys and a verifier, which is a
+  project of its own.
 - **Disputes and chargebacks (Track 02).** When an agent is the buyer, "was this
   authorised?" has a genuinely new answer — the audit trail is the evidence. It
   is the obvious next thing to build and it is not built here.
-- **Multi-user, auth, or persistence beyond one SQLite file.** One mandate, one
-  local database, no login. It is a demonstration of a boundary, not a service.
+- **Multi-tenancy and user accounts.** There is one holder and one shared
+  approval secret, not an identity system. Authentication here answers "may this
+  request release money", not "who are you". A real service would need accounts,
+  per-tenant isolation and per-tenant credentials — which is a different project,
+  and pretending otherwise would be the dishonest kind of scope creep.
 
 ### Known limits of the boundary itself
 
@@ -202,10 +267,13 @@ than one that doesn't.
   velocity detection — "three purchases in ninety seconds" is not a rule yet.
   The agent is instructed not to split, and that instruction is a nudge to a
   cooperative model, not a control.
-- **A compromised mandate file.** Detected, and fails closed. But an attacker
-  with write access to the config also has write access to the hash. The
-  integrity check catches accidents and careless edits, not an adversary with
+- **A compromised database.** Tampering is detected and fails closed, and the
+  storage layer refuses edits outright. But an attacker who can drop the
+  triggers can also recompute a hash. The integrity check catches accidents,
+  careless edits and a widened mandate; it does not stop an adversary who owns
   the filesystem.
+- **Rate limiting is in-process.** It stops a script hammering the demo, not a
+  distributed attacker. Anything stronger belongs at the platform edge.
 
 ---
 
@@ -216,20 +284,32 @@ src/
   types.ts                  zod schemas + shared event/decision types
   gatekeeper/
     policyEngine.ts         pure function — the whole trust boundary. No I/O.
-    mandate.ts              load, expiry, canonical-JSON integrity hash
+    mandate.ts              expiry, canonical-JSON integrity hash
     service.ts              orchestration: decide → pay → log
   razorpay/client.ts        the ONLY module that imports the Razorpay SDK
-  audit/store.ts            append-only SQLite, enforced by triggers
-  agent/shoppingAgent.ts    Claude tool-use loop, exactly one tool
-  server/index.ts           Express API + static dashboard
-dashboard/index.html        the audit view, one file, no framework
-scripts/demo-scenarios.ts   the four scenarios
-tests/                      68 tests
+  audit/
+    store.ts                append-only SQLite, enforced by triggers
+    mandateStore.ts         mandates as rows: issue, revoke, never edit
+    idempotency.ts          a retried intent replays its original decision
+  agent/shoppingAgent.ts    tool-use loop, exactly one tool, any provider
+  server/
+    index.ts                Express API + the built dashboard
+    auth.ts                 HMAC session cookie for the approval gate
+    rateLimit.ts            fixed-window limiter, no dependency
+dashboard/
+  src/Landing.tsx           the story, with the mechanism animated
+  src/App.tsx               the audit dashboard
+  src/components/           header, cards, event rows, landing pieces
+scripts/
+  demo-scenarios.ts         the four scenarios
+  check-secrets.ts          pre-push credential scan
+tests/                      78 unit tests
+  e2e/                      21 browser tests
 NOTES.md                    what broke while building this, and how it got fixed
 ```
 
 The audit trail is append-only in the database, not merely by convention:
 `AuditStore` exposes no update or delete method, and `BEFORE UPDATE` /
-`BEFORE DELETE` triggers abort the write. Two tests go around the class with raw
-SQL to prove it. A resolution is always a new row pointing back at the row it
+`BEFORE DELETE` triggers abort the write. Tests go around the class with raw SQL
+to prove it. A resolution is always a new row pointing back at the row it
 resolves.
