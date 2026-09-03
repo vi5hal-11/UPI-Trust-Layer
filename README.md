@@ -183,6 +183,18 @@ curl -X POST localhost:3000/api/intent -H 'content-type: application/json' \
 > `npm run demo` wipes the database, so it cannot run while the server holds it
 > open. Stop the server first.
 
+### Deploying
+
+See **[DEPLOY.md](DEPLOY.md)**. The short version: build with
+`npm ci && npm run build`, start with `npm run serve` (not `npm start` — that
+rebuilds), health check on `/health`.
+
+The real decision is storage. The audit trail is a SQLite file and a log that
+resets is not an audit trail, so either attach a persistent disk, or run on
+ephemeral storage with `SEED_DEMO_ON_EMPTY=true` — which replays the four
+scenarios through the real gatekeeper on a cold start rather than inserting
+rows.
+
 ---
 
 ## The four scenarios
