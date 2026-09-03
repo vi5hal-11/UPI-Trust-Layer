@@ -4,14 +4,29 @@ The service is one Node process that serves both the API and the built
 dashboard. There is no separate front-end host, no database server, and no
 container required.
 
-```
-build:  npm ci && npm run build     # installs, then builds dashboard/dist
-start:  npm run serve               # starts WITHOUT rebuilding
-health: GET /health
-```
+**These are values you paste into the hosting platform's settings form, not
+commands to run in your own terminal:**
+
+| Field | Value |
+|---|---|
+| Build Command | `npm ci && npm run build` |
+| Start Command | `npm run serve` |
+| Health Check Path | `/health` |
 
 > Use `npm run serve`, not `npm start`. `start` has a `prestart` hook that runs
 > the Vite build, so pairing it with a build command builds twice.
+
+The `&&` above is correct — Render and Railway run these under Linux `sh`. But
+if you want to run the same build **locally on Windows PowerShell**, note that
+PowerShell 5.1 has no `&&` operator:
+
+```powershell
+npm ci; if ($?) { npm run build }     # PowerShell 5.1
+```
+
+```bash
+npm ci && npm run build               # bash, sh, Git Bash, and the host
+```
 
 ---
 
