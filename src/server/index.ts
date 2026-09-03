@@ -18,6 +18,8 @@ import { Gatekeeper, GatekeeperError } from '../gatekeeper/service.js';
 import { agentAvailable, runShoppingAgent } from '../agent/shoppingAgent.js';
 import { isLiveMode, modeLabel } from '../razorpay/client.js';
 import { IdempotencyConflict, IdempotencyStore } from '../audit/idempotency.js';
+import { MandateStore } from '../audit/mandateStore.js';
+import { MandateScopeSchema } from '../types.js';
 import {
   clearSessionCookie,
   isCorrectSecret,
@@ -41,7 +43,7 @@ const dashboardDir = resolve(here, '../../dashboard/dist');
 /** How many events to scan when totalling what policy has refused. */
 const STATS_WINDOW = 1000;
 
-export function createApp(gatekeeper: Gatekeeper, store: AuditStore) {
+export function createApp(gatekeeper: Gatekeeper, store: AuditStore, mandates: MandateStore) {
   const app = express();
   const idempotency = new IdempotencyStore(store.connection);
 
@@ -202,6 +204,67 @@ export function createApp(gatekeeper: Gatekeeper, store: AuditStore) {
     }
   });
 
+  /* ---- mandates ---- */
+
+  app.get('/api/mandates', (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      res.json({ mandates: mandates.list(), active: gatekeeper.mandateInForce.mandate_id });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * Issuing a mandate sets what the agent may spend, so it is strictly more
+   * powerful than approving a single purchase and sits behind the same gate.
+   *
+   * A mandate is never edited: this supersedes the previous one and leaves it
+   * in place, because audit events reference the mandate that authorised them.
+   */
+  app.post('/api/mandates', requireApproval, (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+
+      const scope = MandateScopeSchema.safeParse(body.scope);
+      if (!scope.success) {
+        const detail = scope.error.issues
+          .map((i) => `scope.${i.path.join('.') || '(root)'}: ${i.message}`)
+          .join('; ');
+        res.status(400).json({ error: `That is not a valid mandate scope - ${detail}` });
+        return;
+      }
+
+      const principal = typeof body.principal === 'string' ? body.principal.trim() : '';
+      if (!principal) {
+        res.status(400).json({ error: 'principal is required - who this mandate is issued to.' });
+        return;
+      }
+
+      const expiresAt = typeof body.expires_at === 'string' ? body.expires_at : '';
+      if (Number.isNaN(new Date(expiresAt).getTime())) {
+        res.status(400).json({ error: 'expires_at must be an ISO date. A mandate must expire.' });
+        return;
+      }
+
+      res.status(201).json({ mandate: mandates.issue({ principal, scope: scope.data, expires_at: expiresAt }) });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.post('/api/mandates/:id/revoke', requireApproval, (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const id = String(req.params.id);
+      if (!mandates.revoke(id)) {
+        res.status(404).json({ error: `No active mandate "${id}" to revoke.` });
+        return;
+      }
+      res.json({ revoked: id, active: mandates.active()?.mandate_id ?? null });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   /**
    * SPA fallback. The client renders the landing page at / and the dashboard at
    * /dashboard from one bundle, so a refresh or a shared link on /dashboard has
@@ -232,10 +295,30 @@ export function createApp(gatekeeper: Gatekeeper, store: AuditStore) {
 }
 
 function main(): void {
-  const mandate = loadMandate(env.policyPath);
   const store = new AuditStore(env.auditDbPath);
-  const gatekeeper = new Gatekeeper({ mandate, store });
-  const app = createApp(gatekeeper, store);
+  const mandateStore = new MandateStore(store.connection);
+
+  // First run only: put the seed mandate in the database. After that the
+  // database is the source of truth and the seed file is never read again.
+  const seeded = mandateStore.count() === 0;
+  if (seeded) mandateStore.seedIfEmpty(loadMandate(env.policyPath));
+
+  /** Resolved per decision, so a newly issued mandate applies immediately. */
+  const currentMandate = () => {
+    const active = mandateStore.active();
+    if (!active) {
+      throw new GatekeeperError(
+        'No mandate is in force - every one has been revoked. Issue a new mandate ' +
+          'before the agent can attempt a purchase.',
+        409,
+      );
+    }
+    return active;
+  };
+
+  const mandate = currentMandate();
+  const gatekeeper = new Gatekeeper({ mandate: currentMandate, store });
+  const app = createApp(gatekeeper, store, mandateStore);
 
   if (!existsSync(dashboardDir)) {
     console.error(
@@ -253,7 +336,9 @@ function main(): void {
     console.log(
       `  agent     ${agentAvailable() ? `${env.agentModel} via ${env.agentBaseUrl}` : 'direct mode - no AGENT_API_KEY set'}`,
     );
-    console.log(`  mandate   ${mandate.mandate_id} for ${mandate.principal}`);
+    console.log(
+      `  mandate   ${mandate.mandate_id} for ${mandate.principal}${seeded ? ' (seeded on first run)' : ''}`,
+    );
     console.log(
       `            cap ₹${scope.per_transaction_cap_inr}/txn, ₹${scope.monthly_cap_inr}/month, ` +
         `approval over ₹${scope.step_up_threshold_inr}`,

@@ -25,7 +25,14 @@ import { createOrder as realCreateOrder } from '../razorpay/client.js';
 export type PaymentRail = (intent: PurchaseIntent) => Promise<RazorpayAction>;
 
 export interface GatekeeperOptions {
-  mandate: Mandate;
+  /**
+   * A mandate, or a function returning the one currently in force.
+   *
+   * Mandates now live in the database and can be superseded while the process
+   * is running, so the gatekeeper must not cache one from construction time.
+   * A plain Mandate is still accepted, which is what the tests pass.
+   */
+  mandate: Mandate | (() => Mandate);
   store: AuditStore;
   /** Defaults to the real Razorpay client. */
   createOrder?: PaymentRail;
@@ -68,16 +75,27 @@ export class GatekeeperError extends Error {
 const RETRY_LINK_WINDOW_MS = 10 * 60 * 1000;
 
 export class Gatekeeper {
-  private readonly mandate: Mandate;
+  private readonly resolveMandate: () => Mandate;
   private readonly store: AuditStore;
   private readonly pay: PaymentRail;
   private readonly now: () => Date;
 
   constructor(options: GatekeeperOptions) {
-    this.mandate = options.mandate;
+    this.resolveMandate =
+      typeof options.mandate === 'function'
+        ? (options.mandate as () => Mandate)
+        : () => options.mandate as Mandate;
     this.store = options.store;
     this.pay = options.createOrder ?? realCreateOrder;
     this.now = options.now ?? (() => new Date());
+  }
+
+  /**
+   * Read once per use rather than cached, so issuing a new mandate takes
+   * effect on the very next decision without a restart.
+   */
+  private get mandate(): Mandate {
+    return this.resolveMandate();
   }
 
   get mandateInForce(): Mandate {
