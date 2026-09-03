@@ -19,6 +19,7 @@ import { agentAvailable, runShoppingAgent } from '../agent/shoppingAgent.js';
 import { isLiveMode, modeLabel } from '../razorpay/client.js';
 import { IdempotencyConflict, IdempotencyStore } from '../audit/idempotency.js';
 import { MandateStore } from '../audit/mandateStore.js';
+import { seedDemoIfEmpty } from './seedDemo.js';
 import { MandateScopeSchema } from '../types.js';
 import {
   clearSessionCookie,
@@ -72,7 +73,7 @@ export function createApp(gatekeeper: Gatekeeper, store: AuditStore, mandates: M
 
   /* ---- session: unlocks approvals, nothing else ---- */
 
-  app.post('/api/session', rateLimit({ windowMs: 60_000, max: 5 }), (req: Request, res: Response) => {
+  app.post('/api/session', rateLimit({ windowMs: 60_000, max: 10 }), (req: Request, res: Response) => {
     const secret = (req.body as { secret?: unknown } | undefined)?.secret;
     if (!isCorrectSecret(secret)) {
       // Deliberately vague: do not confirm whether a secret is even configured.
@@ -347,6 +348,19 @@ function main(): void {
     console.log(`  audit db  ${resolve(env.auditDbPath)}`);
     console.log(`  dashboard http://localhost:${env.port}`);
     console.log('');
+
+    // After listening, so a slow rail cannot delay the health check.
+    if (env.seedDemoOnEmpty) {
+      void seedDemoIfEmpty(gatekeeper, store).then((result) => {
+        if (result.seeded) {
+          console.log(`  seeded    ${result.decisions} demo decisions through the gatekeeper
+`);
+        } else if (result.reason) {
+          console.log(`  seed      skipped - ${result.reason}
+`);
+        }
+      });
+    }
   });
 
   // A raw EADDRINUSE stack trace tells a reader nothing they can act on.

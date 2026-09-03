@@ -97,7 +97,14 @@ test.describe('demo path', () => {
     const parked = dash.row('step_up_required').filter({ hasText: item });
     await expect(parked.getByTestId('rail')).toHaveAttribute('data-rail-reached', 'false');
 
-    await page.getByRole('button', { name: 'Approve' }).first().click();
+    // Scope the click to OUR pending item. There may be others parked - the
+    // deployed demo seeds one - and approving whichever happened to render
+    // first would make this test pass or fail on unrelated state.
+    await page
+      .getByTestId('approval-row')
+      .filter({ hasText: item })
+      .getByRole('button', { name: 'Approve' })
+      .click();
 
     // CLAUDE.md invariant 2: policy is re-evaluated at approval time, and the
     // resolution is a NEW event pointing back at the parked one, not an edit.

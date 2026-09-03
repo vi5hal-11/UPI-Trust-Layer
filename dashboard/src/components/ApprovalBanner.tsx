@@ -54,6 +54,8 @@ export function ApprovalBanner({ pending, onResolve, unlocked }: ApprovalBannerP
             {pending.map((e) => (
               <div
                 key={e.event_id}
+                data-testid="approval-row"
+                data-event-id={e.event_id}
                 className="flex flex-wrap items-center gap-x-4 gap-y-2.5 border-t border-wait-line pt-3 first:border-t-0 first:pt-0"
               >
                 <div className="min-w-[260px] flex-1">

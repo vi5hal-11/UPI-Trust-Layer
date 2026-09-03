@@ -71,8 +71,27 @@ export class DashboardPage {
   async unlockApprovals() {
     const secret = process.env.APPROVAL_SECRET;
     if (!secret) throw new Error('APPROVAL_SECRET is not set; cannot unlock approvals.');
+
+    // Sign in only if we are not already signed in. Sign-in is rate limited on
+    // purpose, and the hardening suite deliberately exhausts that budget to
+    // prove the limiter works - so a helper that POSTs unconditionally makes
+    // the whole suite order-dependent.
+    const existing = await this.page.request.get('/api/session');
+    if (existing.ok() && ((await existing.json()) as { unlocked: boolean }).unlocked) {
+      await this.page.reload();
+      await this.events.first().waitFor({ state: 'visible' });
+      return;
+    }
+
     const res = await this.page.request.post('/api/session', { data: { secret } });
-    if (!res.ok()) throw new Error(`Unlock failed: ${res.status()}`);
+    if (!res.ok()) {
+      throw new Error(
+        res.status() === 429
+          ? 'Unlock was rate limited (429). Another test exhausted the sign-in budget; ' +
+            'the limiter is working, the suite just asked for too many sign-ins.'
+          : `Unlock failed: ${res.status()}`,
+      );
+    }
     await this.page.reload();
     await this.events.first().waitFor({ state: 'visible' });
   }

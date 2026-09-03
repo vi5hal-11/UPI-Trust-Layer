@@ -56,6 +56,13 @@ export const env = {
   isProduction: nodeEnv === 'production',
 
   /**
+   * Run the four demo scenarios through the real gatekeeper on boot when the
+   * audit trail is empty. Intended for hosted demos on ephemeral storage, where
+   * a restart would otherwise leave a visitor looking at an empty log.
+   */
+  seedDemoOnEmpty: str('SEED_DEMO_ON_EMPTY', 'false').toLowerCase() === 'true',
+
+  /**
    * Lazy on purpose. The policy engine, the audit store and their tests have
    * no business needing an approval secret, and importing this module must not
    * force one to exist. It is validated the first time the auth layer asks.

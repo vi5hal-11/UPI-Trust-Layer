@@ -126,8 +126,8 @@ test.describe('operational endpoints', () => {
   test('the sign-in route is rate limited', async ({ request }) => {
     const key = `burst-${Date.now()}`;
     let sawLimit = false;
-    // The limit is 5/min; a handful past that must start returning 429.
-    for (let i = 0; i < 9; i += 1) {
+    // The limit is 10/min; a handful past that must start returning 429.
+    for (let i = 0; i < 16; i += 1) {
       const res = await request.post('/api/session', { data: { secret: `${key}-${i}` } });
       if (res.status() === 429) {
         expect(res.headers()['retry-after']).toBeDefined();
