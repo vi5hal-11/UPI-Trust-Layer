@@ -63,6 +63,17 @@ export const env = {
   seedDemoOnEmpty: str('SEED_DEMO_ON_EMPTY', 'false').toLowerCase() === 'true',
 
   /**
+   * Exposes POST /api/dev/reset, which empties the audit trail and replays the
+   * demo scenarios. For re-recording a demo without stopping the server.
+   *
+   * Refused in production regardless of what is set: an endpoint that erases
+   * the audit trail has no business existing on a deployed instance, whatever
+   * the environment file says.
+   */
+  allowDemoReset:
+    str('ALLOW_DEMO_RESET', 'false').toLowerCase() === 'true' && nodeEnv !== 'production',
+
+  /**
    * Lazy on purpose. The policy engine, the audit store and their tests have
    * no business needing an approval secret, and importing this module must not
    * force one to exist. It is validated the first time the auth layer asks.

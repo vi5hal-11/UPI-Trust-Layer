@@ -207,6 +207,40 @@ export function createApp(gatekeeper: Gatekeeper, store: AuditStore, mandates: M
 
   /* ---- mandates ---- */
 
+  /**
+   * Empty the audit trail and replay the demo scenarios, leaving one purchase
+   * parked for approval. For re-recording a demo take without stopping the
+   * server - which on Windows is the only way to reset, because the database
+   * file cannot be deleted while it is held open.
+   *
+   * Registered only when ALLOW_DEMO_RESET is set, and env refuses to honour
+   * that in production. When it is off the route does not exist at all, so an
+   * unknown path 404s rather than a disabled endpoint advertising itself.
+   */
+  if (env.allowDemoReset) {
+    app.post('/api/dev/reset', async (_req: Request, res: Response, next: NextFunction) => {
+      try {
+        store.resetForDemoRecording();
+
+        // The seeder replays the four scenarios but does NOT approve the
+        // step-up the way `npm run demo` does, so it already leaves exactly one
+        // purchase parked. Adding another here would put two identical rows in
+        // the banner and make the log read as if something had gone wrong.
+        const seeded = await seedDemoIfEmpty(gatekeeper, store);
+        const pending = store.pendingStepUps(gatekeeper.mandateInForce.mandate_id);
+
+        res.json({
+          reset: true,
+          seeded_decisions: seeded.decisions,
+          pending_for_approval: pending.length,
+          decisions_now: store.list(1000).length,
+        });
+      } catch (err) {
+        next(err);
+      }
+    });
+  }
+
   app.get('/api/mandates', (_req: Request, res: Response, next: NextFunction) => {
     try {
       res.json({ mandates: mandates.list(), active: gatekeeper.mandateInForce.mandate_id });

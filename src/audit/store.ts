@@ -78,6 +78,37 @@ export class AuditStore {
     this.migrate();
   }
 
+  /**
+   * Empty the audit trail. DEVELOPMENT AND DEMO RECORDING ONLY.
+   *
+   * This deliberately defeats the append-only triggers, which is the one thing
+   * the rest of this class exists to make impossible. It is here because
+   * re-recording a demo otherwise means stopping the server, deleting the
+   * database file and starting again - and on Windows the file cannot be
+   * deleted while the server holds it open.
+   *
+   * It is unreachable unless ALLOW_DEMO_RESET is explicitly set, and the server
+   * refuses to enable that in production. Nothing in the normal request path
+   * calls it.
+   */
+  resetForDemoRecording(): void {
+    this.db.exec(`
+      DROP TRIGGER IF EXISTS audit_events_no_update;
+      DROP TRIGGER IF EXISTS audit_events_no_delete;
+      DELETE FROM audit_events;
+      DELETE FROM sqlite_sequence WHERE name = 'audit_events';
+    `);
+    try {
+      this.db.exec(`DELETE FROM idempotency_keys;`);
+    } catch {
+      // The table only exists once the server has created it. A reset that runs
+      // before that is still a valid reset.
+    }
+    // Put the guards back immediately, so the trail is append-only again the
+    // moment this returns.
+    this.migrate();
+  }
+
   private migrate(): void {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS audit_events (
