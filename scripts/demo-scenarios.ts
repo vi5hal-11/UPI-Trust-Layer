@@ -93,9 +93,34 @@ async function main(): Promise<void> {
   }
 
   // A fresh database, so the numbers printed below are honest.
+  //
+  // On Windows a file cannot be deleted while another process holds it open, so
+  // running this with the server up fails with EBUSY. That is the single most
+  // common way to trip over this script, and a raw errno tells the reader
+  // nothing they can act on.
   const dbPath = resolve(env.auditDbPath);
-  for (const suffix of ['', '-shm', '-wal']) {
-    rmSync(dbPath + suffix, { force: true });
+  try {
+    for (const suffix of ['', '-shm', '-wal']) {
+      rmSync(dbPath + suffix, { force: true });
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'EBUSY' || code === 'EPERM' || code === 'EACCES') {
+      console.error(
+        `\n${paint.red}The demo cannot reset the audit trail: something else has the ` +
+          `database open.${paint.reset}\n\n` +
+          `  ${dbPath}\n\n` +
+          `  This is almost always a running server. Stop it, then run this again:\n\n` +
+          `    ${paint.bold}npm run demo${paint.reset}\n` +
+          `    ${paint.bold}npm run serve${paint.reset}\n\n` +
+          `  On Windows, if you cannot find the terminal it is running in:\n\n` +
+          `    ${paint.grey}Get-CimInstance Win32_Process -Filter "Name='node.exe'" |${paint.reset}\n` +
+          `      ${paint.grey}Where-Object { $_.CommandLine -like '*upi-agent-trust-layer*' } |${paint.reset}\n` +
+          `      ${paint.grey}ForEach-Object { Stop-Process -Id $_.ProcessId -Force }${paint.reset}\n`,
+      );
+      process.exit(1);
+    }
+    throw err;
   }
 
   const mandate = loadMandate(env.policyPath);
