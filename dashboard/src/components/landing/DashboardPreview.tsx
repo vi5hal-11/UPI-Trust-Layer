@@ -1,5 +1,8 @@
+import { useEffect, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { motionTokens, springs } from '@/lib/motion';
+import { fetchState, DECISION_LABEL, type AuditEvent } from '@/lib/api';
+import { inr } from '@/lib/utils';
 
 /**
  * A live miniature of the dashboard for the hero.
@@ -9,8 +12,10 @@ import { motionTokens, springs } from '@/lib/motion';
  * for light mode, and costs bandwidth. This stays crisp at any size, follows
  * the theme, and cannot drift out of date.
  *
- * The rows are the real seeded demo scenarios, so it is a smaller view of the
- * product rather than an invented one.
+ * It reads the live audit trail, falling back to the seeded scenarios only if
+ * the service cannot be reached. So it is a smaller view of the real product,
+ * not an invented one - and it cannot drift out of step with the stat band
+ * directly beneath it, which would be the tell that one of them was made up.
  */
 
 const ROWS = [
@@ -26,8 +31,43 @@ const TONE: Record<string, { edge: string; pill: string; rail: string }> = {
   wait: { edge: 'bg-wait', pill: 'border-wait-line bg-wait-soft text-wait', rail: 'text-wait' },
 };
 
+const TONE_FOR: Record<string, string> = {
+  allowed: 'ok',
+  step_up_approved: 'ok',
+  blocked: 'stop',
+  step_up_required: 'wait',
+  step_up_denied: 'ok',
+  payment_failed: 'stop',
+};
+
 export function DashboardPreview() {
   const reduce = useReducedMotion();
+  const [live, setLive] = useState<{ rows: typeof ROWS; spend: string; pct: number } | null>(null);
+
+  useEffect(() => {
+    void fetchState()
+      .then((state) => {
+        const rows = state.events.slice(0, 4).map((e: AuditEvent) => ({
+          tone: (TONE_FOR[e.decision] ?? 'ok') as 'ok' | 'stop' | 'wait',
+          label: DECISION_LABEL[e.decision],
+          item: e.item,
+          amount: inr(e.amount_inr),
+          reached: Boolean(e.razorpay_order_id),
+        }));
+        if (rows.length === 0) return;
+        const cap = state.budget.monthly_cap_inr || 1;
+        setLive({
+          rows: rows as unknown as typeof ROWS,
+          spend: inr(state.budget.month_spend_inr),
+          pct: Math.min(1, state.budget.month_spend_inr / cap),
+        });
+      })
+      .catch(() => setLive(null));
+  }, []);
+
+  const rows = live?.rows ?? ROWS;
+  const spend = live?.spend ?? '₹3,800';
+  const pct = live?.pct ?? 0.38;
 
   return (
     <motion.div
@@ -51,22 +91,24 @@ export function DashboardPreview() {
           This month
         </p>
         <p className="tnum mt-1.5 text-[22px] font-semibold leading-none tracking-[-0.025em]">
-          ₹3,800
+          {spend}
         </p>
         <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-bg-subtle">
           <motion.div
             className="h-full origin-left rounded-full bg-brand"
             initial={{ scaleX: 0 }}
-            animate={{ scaleX: 0.38 }}
+            animate={{ scaleX: pct }}
             transition={{ duration: reduce ? 0 : 0.9, delay: 0.6, ease: 'easeOut' }}
           />
         </div>
-        <p className="mt-1.5 text-[10.5px] text-text-dim">38% of the ₹10,000 monthly cap</p>
+        <p className="mt-1.5 text-[10.5px] text-text-dim">
+          {Math.round(pct * 100)}% of the monthly cap
+        </p>
       </div>
 
       {/* decision rows */}
       <div className="grid gap-1.5 p-3">
-        {ROWS.map((row, i) => (
+        {rows.map((row, i) => (
           <motion.div
             key={row.item}
             initial={{ opacity: 0, x: reduce ? 0 : -motionTokens.distance.sm }}

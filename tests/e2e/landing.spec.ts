@@ -20,11 +20,25 @@ test.describe('landing page', () => {
     await expect(page.getByText('/dashboard', { exact: true })).toBeVisible();
   });
 
-  test('the stat band counts real, checkable figures', async ({ page }) => {
-    for (const figure of ['68', '19', '3']) {
-      await expect(page.getByText(figure, { exact: true }).first()).toBeVisible();
-    }
+  test('the stat band reports real figures, not literals someone has to remember', async ({
+    page,
+    request,
+  }) => {
+    // Deliberately no magic numbers here. Asserting "68" was how the page came
+    // to claim 68 tests when there were 78: the number and its test drifted
+    // together, so the test proved nothing. Assert the PROPERTY instead - that
+    // the figures shown match what the running service actually reports.
     await expect(page.getByText(/unit tests on the trust boundary/i)).toBeVisible();
+    await expect(page.getByText(/decisions on the live audit trail/i)).toBeVisible();
+    await expect(page.getByText(/they are not claims/i)).toBeVisible();
+
+    const state = await (await request.get('/api/state')).json();
+
+    // The live decision count must appear, counted up from the real trail.
+    const band = page.getByText(/decisions on the live audit trail/i).locator('..');
+    await expect
+      .poll(async () => (await band.innerText()).replace(/\D/g, ''), { timeout: 8_000 })
+      .toBe(String(state.stats.decisions_logged));
   });
 
   test('the rail diagram shows a request being stopped at the gate', async ({ page }) => {
